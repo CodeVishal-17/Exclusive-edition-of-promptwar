@@ -1,0 +1,39 @@
+{
+  "name": "legallens",
+  "version": "1.0.0",
+  "description": "LegalLens - a Gemini-powered assistant that explains legal documents in plain language, with quotes verified against the source, grounded Q&A, contract comparison and questions for a lawyer.",
+  "main": "server.js",
+  "type": "module",
+  "private": true,
+  "engines": {
+    "node": ">=20.12"
+  },
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js",
+    "test": "node scripts/run-tests.js",
+    "test:live": "node scripts/live-check.js"
+  },
+  "keywords": [
+    "legal",
+    "gemini",
+    "vertex-ai",
+    "cloud-run",
+    "accessibility",
+    "promptwars"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "@google/genai": "^2.23.0",
+    "ajv": "^8.20.0",
+    "compression": "^1.8.2",
+    "express": "^5.2.1",
+    "express-rate-limit": "^8.7.0",
+    "helmet": "^8.3.0",
+    "image-size": "^2.0.4",
+    "unpdf": "^1.8.1"
+  },
+  "devDependencies": {
+    "supertest": "^7.2.2"
+  }
+}

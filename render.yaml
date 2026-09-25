@@ -1,0 +1,25 @@
+# Render Blueprint: https://render.com/docs/blueprint-spec
+# Creates LegalLens as a free Docker web service. No Google Cloud project or billing is used.
+# GEMINI_API_KEY is marked `sync: false`, so Render asks you for it and it is never stored in this file.
+services:
+  - type: web
+    name: legallens
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    dockerContext: ./
+    plan: free
+    region: singapore # oregon | ohio | virginia | frankfurt | singapore
+    healthCheckPath: /health
+    autoDeployTrigger: commit
+    envVars:
+      - key: GEMINI_API_KEY
+        sync: false # secret: entered in the Render dashboard
+      - key: GEMINI_MODEL
+        value: gemini-3.6-flash
+      # A public demo shares one free-tier quota, so keep per-visitor and retry limits low.
+      - key: RATE_LIMIT_PER_MINUTE
+        value: "6"
+      - key: GEMINI_MAX_RETRIES
+        value: "1"
+# NODE_ENV=production is set in the Dockerfile. Render sets PORT (default 10000) and the app reads it.
+# TRUST_PROXY defaults to 1, which matches Render's single proxy hop.

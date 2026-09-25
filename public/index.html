@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>LegalLens — Understand any legal document</title>
+  <meta name="description" content="LegalLens uses Google Gemini to explain contracts, notices and agreements in plain language, with quotes checked against your document, deadlines, grounded Q&amp;A, comparisons and questions for your lawyer.">
+  <meta name="theme-color" content="#1e3a5f">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%E2%9A%96%EF%B8%8F%3C/text%3E%3C/svg%3E">
+  <link rel="stylesheet" href="/styles.css">
+  <script type="module" src="/app.js"></script>
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to main content</a>
+
+  <header class="site-header">
+    <div class="container header-inner">
+      <div class="brand">
+        <span class="brand-mark" aria-hidden="true">⚖️</span>
+        <div>
+          <p class="brand-name">LegalLens</p>
+          <p class="brand-tag">Legal documents, explained in plain language</p>
+        </div>
+      </div>
+      <form class="prefs" aria-label="Explanation preferences" id="prefs">
+        <label for="language">Explain in</label>
+        <select id="language" name="language"><option value="en">English</option></select>
+        <label for="readingLevel">Detail</label>
+        <select id="readingLevel" name="readingLevel">
+          <option value="simple">Simple</option>
+          <option value="standard" selected>Standard</option>
+          <option value="detailed">Detailed</option>
+        </select>
+      </form>
+    </div>
+  </header>
+
+  <main id="main" class="container" tabindex="-1">
+    <p class="disclaimer" role="note">
+      <strong>Information, not legal advice.</strong> LegalLens helps you understand documents and prepare for a
+      conversation with a qualified lawyer. It can make mistakes — always check important points.
+    </p>
+
+    <p class="notice" role="note">
+      <span aria-hidden="true">🔒</span> <strong>Please use sample or non-confidential documents in this demo.</strong>
+      Your document is sent to Google Gemini to produce the answer. This demo runs on Google's free tier, where
+      Google may use what is sent to improve its products. LegalLens does not save your documents.
+    </p>
+
+    <div id="service-status" class="alert alert-warn" role="alert" hidden></div>
+
+    <div class="tabs" role="tablist" aria-label="LegalLens tools">
+      <button role="tab" id="tab-understand" aria-controls="panel-understand" aria-selected="true">
+        <span aria-hidden="true">📄</span> Understand
+      </button>
+      <button role="tab" id="tab-ask" aria-controls="panel-ask" aria-selected="false" tabindex="-1">
+        <span aria-hidden="true">💬</span> Ask
+      </button>
+      <button role="tab" id="tab-compare" aria-controls="panel-compare" aria-selected="false" tabindex="-1">
+        <span aria-hidden="true">⚖️</span> Compare
+      </button>
+    </div>
+
+    <!-- ============ UNDERSTAND ============ -->
+    <section id="panel-understand" role="tabpanel" aria-labelledby="tab-understand" class="panel">
+      <div class="card">
+        <h1 class="card-title">Understand a legal document</h1>
+        <p class="muted">Upload a PDF or a photo of a notice, or paste the text. We'll summarise it, flag clauses worth a closer look,
+          list your deadlines and prepare questions for a lawyer.</p>
+        <div class="doc-input" data-doc-input="main"></div>
+        <div class="actions">
+          <button class="btn btn-primary" id="analyze-btn" type="button">Analyse document</button>
+          <button class="btn btn-ghost" id="sample-btn" type="button">Try a sample rental agreement</button>
+        </div>
+      </div>
+
+      <div id="analysis-status" class="status" role="status" aria-live="polite"></div>
+      <div id="analysis-results" class="results" hidden tabindex="-1" aria-labelledby="result-title"></div>
+    </section>
+
+    <!-- ============ ASK ============ -->
+    <section id="panel-ask" role="tabpanel" aria-labelledby="tab-ask" class="panel" hidden>
+      <div class="card">
+        <h2 class="card-title">Ask questions about your document</h2>
+        <p id="ask-doc-label" class="muted">No document loaded yet. Add one in the <strong>Understand</strong> tab, or below.</p>
+        <details id="ask-doc-details" class="ask-doc">
+          <summary>Load a different document for questions</summary>
+          <div class="doc-input" data-doc-input="ask"></div>
+          <button class="btn btn-secondary" type="button" id="ask-use-doc">Use this document</button>
+        </details>
+
+        <ol id="chat-log" class="chat-log" aria-live="polite" aria-label="Conversation"></ol>
+        <div id="suggestions" class="chips" aria-label="Suggested questions"></div>
+
+        <form id="ask-form" class="ask-form">
+          <label for="question" class="sr-only">Your question</label>
+          <textarea id="question" rows="2" maxlength="1000" placeholder="e.g. Can my landlord keep my deposit if I leave early?" required></textarea>
+          <button class="btn btn-primary" type="submit" id="ask-btn">Ask</button>
+        </form>
+        <div id="ask-status" class="status" role="status" aria-live="polite"></div>
+      </div>
+    </section>
+
+    <!-- ============ COMPARE ============ -->
+    <section id="panel-compare" role="tabpanel" aria-labelledby="tab-compare" class="panel" hidden>
+      <div class="card">
+        <h2 class="card-title">Compare two documents</h2>
+        <p class="muted">Compare two offers, or an old and a revised version of the same contract.</p>
+        <div class="compare-grid">
+          <fieldset class="doc-fieldset">
+            <legend>Document A</legend>
+            <div class="doc-input" data-doc-input="A"></div>
+          </fieldset>
+          <fieldset class="doc-fieldset">
+            <legend>Document B</legend>
+            <div class="doc-input" data-doc-input="B"></div>
+          </fieldset>
+        </div>
+        <div class="actions">
+          <button class="btn btn-primary" id="compare-btn" type="button">Compare documents</button>
+          <button class="btn btn-ghost" id="compare-sample-btn" type="button">Try a sample original vs. revised draft</button>
+        </div>
+      </div>
+      <div id="compare-status" class="status" role="status" aria-live="polite"></div>
+      <div id="compare-results" class="results" hidden tabindex="-1"></div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="container">
+      <p>Need help now? In India, free legal aid is available through NALSA — call <a href="tel:15100">15100</a>.
+        Elsewhere, look for your local legal aid society or bar association referral service.</p>
+      <p class="muted">LegalLens does not save your documents to disk or keep them in your browser. Documents are sent to Google Gemini to
+        generate answers, and on Google's free tier the content sent may be used by Google to improve its products, so please use
+        sample or non-confidential documents. To avoid repeat AI calls, results (which can include short quotes) are kept in server
+        memory for up to 15 minutes. Powered by Google Gemini <span id="model-name"></span>.</p>
+    </div>
+  </footer>
+
+  <template id="doc-input-template">
+    <div class="segmented" role="radiogroup" aria-label="How do you want to add the document?">
+      <label><input type="radio" value="file" checked> Upload file</label>
+      <label><input type="radio" value="text"> Paste text</label>
+    </div>
+    <div class="mode mode-file">
+      <div class="dropzone">
+        <input type="file" class="file-input" accept="application/pdf,image/png,image/jpeg,image/webp,text/plain,.txt,.pdf">
+        <p class="dz-text"><span aria-hidden="true">⬆️</span> <strong>Choose a file</strong> or drag it here</p>
+        <p class="muted small">PDF (up to 60 pages), photo (PNG / JPEG / WEBP) or TXT · up to 7 MB</p>
+      </div>
+      <p class="file-name small" aria-live="polite"></p>
+    </div>
+    <div class="mode mode-text" hidden>
+      <label class="small">Document text
+        <textarea class="text-input" rows="9" maxlength="60000" placeholder="Paste the full text of the agreement, notice or policy here…"></textarea>
+      </label>
+      <p class="char-count small muted" aria-live="off">0 / 60,000 characters</p>
+    </div>
+  </template>
+</body>
+</html>

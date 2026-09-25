@@ -1,0 +1,15 @@
+node_modules
+test
+scripts
+.git
+.gitignore
+.gcloudignore
+render.yaml
+live-check-report.json
+.claude
+.env
+.env.*
+*.md
+*.log
+Dockerfile
+.dockerignore
