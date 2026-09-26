@@ -54,6 +54,7 @@ const countedClient = {
 const legalService = createLegalService({
   generateJson: createJsonGenerator(countedClient, config, { logger }),
   cache: new LruCache({ maxEntries: 0 }), // never serve cached results in a live check
+  askCache: new LruCache({ maxEntries: 0 }),
   logger,
 });
 const app = createApp({ config: { ...config, rateLimitPerMinute: 1000 }, legalService, logger });

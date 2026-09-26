@@ -21,5 +21,8 @@ services:
         value: "6"
       - key: GEMINI_MAX_RETRIES
         value: "1"
+      # Render puts exactly one proxy in front of the app; trust only that hop for the client IP.
+      - key: TRUST_PROXY
+        value: "1"
 # NODE_ENV=production is set in the Dockerfile. Render sets PORT (default 10000) and the app reads it.
-# TRUST_PROXY defaults to 1, which matches Render's single proxy hop.
+# Render also sets RENDER=true (TRUST_PROXY falls back to 1) and RENDER_EXTERNAL_URL (always an allowed origin).

@@ -176,7 +176,21 @@ export function normaliseComparison(raw, sourceA = null, sourceB = null) {
 
 const docFingerprint = (doc) => (doc.kind === 'text' ? doc.text : `${doc.mimeType}:${doc.data}`);
 
-export function createLegalService({ generateJson, cache = new LruCache(), logger }) {
+/** Results larger than this are returned but not cached (keeps cache memory bounded). */
+export const MAX_CACHED_RESULT_CHARS = 256 * 1024;
+const fitsInCache = (value) => JSON.stringify(value).length <= MAX_CACHED_RESULT_CHARS;
+
+/**
+ * @param {object} deps
+ * @param {Function} deps.generateJson model call (injected; mocked in tests)
+ * @param {LruCache} [deps.cache] Analyze / Compare results
+ * @param {LruCache} [deps.askCache] Ask answers (short TTL: conversations move on quickly)
+ */
+export function createLegalService({ generateJson, cache = new LruCache(), askCache = new LruCache({ ttlMs: 5 * 60 * 1000 }), logger }) {
+  // Single-flight: identical requests already in progress share one model call.
+  // Entries exist only while a call is running and are removed when it settles.
+  const inflight = new Map();
+
   /** Call the model and require schema-valid output, retrying once if it is not. */
   async function generateValid(request) {
     // Both attempts share one overall deadline (see createJsonGenerator's totalTimeoutMs).
@@ -190,34 +204,58 @@ export function createLegalService({ generateJson, cache = new LruCache(), logge
     throw new AIServiceError('The AI returned an incomplete answer. Please try again.', { status: 502, code: 'schema_invalid' });
   }
 
-  async function cached(key, compute) {
-    const hit = cache.get(key);
+  /**
+   * Cached, single-flight computation. A cache hit returns immediately; an identical
+   * request that is already running is joined instead of calling the model again.
+   * Failed or timed-out calls are never cached and always clear the in-flight entry.
+   */
+  async function once(store, key, compute) {
+    const hit = store.get(key);
     if (hit) return { ...hit, cached: true };
-    const value = await compute();
-    cache.set(key, value);
+    let pending = inflight.get(key);
+    if (!pending) {
+      pending = (async () => {
+        const value = await compute();
+        if (fitsInCache(value)) store.set(key, value);
+        return value;
+      })();
+      inflight.set(key, pending);
+      // Registered before any caller awaits, so the entry is gone before callers resume.
+      pending.finally(() => inflight.delete(key)).catch(() => {});
+    }
+    const value = await pending;
     return { ...value, cached: false };
   }
 
   return {
     analyze(doc, options) {
       const key = hashKey('analyze:v2', docFingerprint(doc), options);
-      return cached(key, async () => {
+      return once(cache, key, async () => {
         const raw = await generateValid({ ...analysisPrompt(doc, options), schema: ANALYSIS_SCHEMA });
         return normaliseAnalysis(raw, doc.source);
       });
     },
 
-    async ask(doc, question, history, options) {
-      const raw = await generateValid({ ...questionPrompt(doc, question, history, options), schema: ANSWER_SCHEMA });
-      return normaliseAnswer(raw, doc.source);
+    ask(doc, question, history, options) {
+      // Everything that can change the answer is part of the key.
+      const key = hashKey('ask:v1', docFingerprint(doc), question, history, options);
+      return once(askCache, key, async () => {
+        const raw = await generateValid({ ...questionPrompt(doc, question, history, options), schema: ANSWER_SCHEMA });
+        return normaliseAnswer(raw, doc.source);
+      });
     },
 
     compare(docA, docB, options) {
       const key = hashKey('compare:v2', docFingerprint(docA), docFingerprint(docB), options);
-      return cached(key, async () => {
+      return once(cache, key, async () => {
         const raw = await generateValid({ ...comparisonPrompt(docA, docB, options), schema: COMPARISON_SCHEMA });
         return normaliseComparison(raw, docA.source, docB.source);
       });
+    },
+
+    /** Sizes only (no content), for tests and diagnostics. */
+    stats() {
+      return { inflight: inflight.size, cacheEntries: cache.size, askCacheEntries: askCache.size };
     },
   };
 }

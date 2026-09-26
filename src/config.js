@@ -44,7 +44,8 @@ export const LIMITS = Object.freeze({
   maxQuestionChars: 1_000,
   maxHistoryTurns: 8,
   maxHistoryChars: 2_000,
-  jsonBodyLimit: '20mb', // two 7 MB files, base64-encoded (~4/3 overhead), plus JSON framing
+  jsonBodyLimit: '20mb', // Compare: two 7 MB files, base64-encoded (~4/3 overhead), plus JSON framing
+  singleDocBodyLimit: '10mb', // Analyze / Ask: one 7 MB file (~9.4 MB base64) plus question and history
 });
 
 export const DEFAULT_MODEL = 'gemini-3.6-flash';
@@ -113,9 +114,34 @@ export function parseConfig(env = process.env) {
     rateLimitPerMinute: readInt(env, 'RATE_LIMIT_PER_MINUTE', 20, { min: 1, max: 10_000 }, errors),
     cacheEntries: readInt(env, 'CACHE_ENTRIES', 100, { min: 0, max: 10_000 }, errors),
     cacheTtlMs: readInt(env, 'CACHE_TTL_MS', 15 * 60 * 1000, { min: 0, max: 24 * 60 * 60 * 1000 }, errors),
-    trustProxy: readInt(env, 'TRUST_PROXY', 1, { min: 0, max: 10 }, errors),
+    // Ask answers are cached briefly: follow-up conversations change quickly.
+    askCacheTtlMs: readInt(env, 'ASK_CACHE_TTL_MS', 5 * 60 * 1000, { min: 0, max: 60 * 60 * 1000 }, errors),
+    // Number of reverse-proxy hops to trust for the client IP (used by rate limiting). Trusting a
+    // proxy that is not there lets any client spoof X-Forwarded-For, so the default is 0 unless we
+    // know we run behind exactly one proxy (Render sets RENDER=true; Cloud Run sets K_SERVICE).
+    trustProxy: readInt(env, 'TRUST_PROXY', env.RENDER === 'true' || env.K_SERVICE ? 1 : 0, { min: 0, max: 10 }, errors),
+    // Browser origins allowed to call the AI endpoints, besides the page's own origin.
+    allowedOrigins: parseOrigins([env.ALLOWED_ORIGINS, env.RENDER_EXTERNAL_URL].filter(Boolean).join(','), errors),
+    // Simultaneous AI requests: per client IP, and for the whole instance.
+    aiConcurrencyPerClient: readInt(env, 'AI_CONCURRENCY_PER_CLIENT', 2, { min: 1, max: 20 }, errors),
+    aiConcurrencyTotal: readInt(env, 'AI_CONCURRENCY_TOTAL', 10, { min: 1, max: 200 }, errors),
   });
   return { config, errors, warnings };
+}
+
+/** Comma-separated list of origins ("https://host[:port]") -> normalised, de-duplicated array. */
+function parseOrigins(raw, errors) {
+  const out = new Set();
+  for (const item of String(raw ?? '').split(',').map((s) => s.trim()).filter(Boolean)) {
+    try {
+      const url = new URL(item);
+      if (!/^https?:$/.test(url.protocol) || url.origin === 'null') throw new Error('not http(s)');
+      out.add(url.origin);
+    } catch {
+      errors.push(`ALLOWED_ORIGINS entry "${item}" is not a valid http(s) origin.`);
+    }
+  }
+  return Object.freeze([...out]);
 }
 
 /** Convenience wrapper used by tests: returns config, ignoring validation messages. */
