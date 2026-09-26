@@ -11,7 +11,6 @@ import helmet from 'helmet';
 import { LIMITS, publicConfig } from './config.js';
 import { AIServiceError, ValidationError } from './errors.js';
 import { inspectDocument } from './file-inspect.js';
-import { createConcurrencyGate, originGuard } from './guards.js';
 import { silentLogger } from './logger.js';
 import {
   validateDocument,
@@ -27,17 +26,12 @@ async function readDocument(input, label) {
   return inspectDocument(validateDocument(input, label), label);
 }
 
-/**
- * @param {object} deps
- * @param {string} [deps.bodyLimit] override for every AI route's JSON limit (tests use a small value)
- */
-export function createApp({ config, legalService, logger = silentLogger, bodyLimit }) {
+export function createApp({ config, legalService, logger = silentLogger, bodyLimit = LIMITS.jsonBodyLimit }) {
   const app = express();
   const aiReady = Boolean(legalService);
 
   app.disable('x-powered-by');
-  // Hop count, not `true`: only the last proxy's X-Forwarded-For entry is trusted (see config.js).
-  app.set('trust proxy', config.trustProxy ?? 0);
+  app.set('trust proxy', config.trustProxy);
 
   app.use(
     helmet({
@@ -57,11 +51,6 @@ export function createApp({ config, legalService, logger = silentLogger, bodyLim
       crossOriginEmbedderPolicy: false,
     }),
   );
-  // The app needs no powerful browser features; deny them outright.
-  app.use((_req, res, next) => {
-    res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=(), payment=(), usb=()');
-    next();
-  });
   app.use(compression());
 
   app.use(
@@ -80,8 +69,6 @@ export function createApp({ config, legalService, logger = silentLogger, bodyLim
   app.get('/api/config', (_req, res) => res.json(publicConfig(config, aiReady)));
 
   const api = express.Router();
-  // Cross-site browser requests are refused first, so they never consume a visitor's rate limit.
-  api.use(originGuard({ allowedOrigins: config.allowedOrigins ?? [], logger }));
   api.use(
     rateLimit({
       windowMs: 60_000,
@@ -99,38 +86,23 @@ export function createApp({ config, legalService, logger = silentLogger, bodyLim
     }
     return next();
   });
-  // Concurrency slot is taken before the body is read, so parallel large uploads are capped too.
-  const aiGate = createConcurrencyGate({
-    perClient: config.aiConcurrencyPerClient ?? 2,
-    total: config.aiConcurrencyTotal ?? 10,
-    backstopMs: (config.totalTimeoutMs ?? 110_000) + 60_000,
-    logger,
-  });
-  app.locals.aiGate = aiGate;
-  api.use(aiGate);
-  // Analyze and Ask carry one document; only Compare needs room for two.
-  const jsonSingle = express.json({ limit: bodyLimit ?? LIMITS.singleDocBodyLimit });
-  const jsonDouble = express.json({ limit: bodyLimit ?? LIMITS.jsonBodyLimit });
+  api.use(express.json({ limit: bodyLimit }));
 
   const timed = (event, handler) => async (req, res) => {
     const started = Date.now();
-    try {
-      const result = await handler(req);
-      // Metadata only — never document text, questions or model output.
-      logger.info(`${event} ok`, { event, ms: Date.now() - started, cached: result.cached ?? false, grounding: result.grounding });
-      res.json(result);
-    } finally {
-      res.locals.releaseAiSlot?.();
-    }
+    const result = await handler(req);
+    // Metadata only — never document text, questions or model output.
+    logger.info(`${event} ok`, { event, ms: Date.now() - started, cached: result.cached ?? false, grounding: result.grounding });
+    res.json(result);
   };
 
-  api.post('/analyze', jsonSingle, timed('analyze', async (req) => {
+  api.post('/analyze', timed('analyze', async (req) => {
     const options = validateOptions(req.body);
     const doc = await readDocument(req.body?.document, 'document');
     return legalService.analyze(doc, options);
   }));
 
-  api.post('/ask', jsonSingle, timed('ask', async (req) => {
+  api.post('/ask', timed('ask', async (req) => {
     const question = validateQuestion(req.body?.question);
     const history = validateHistory(req.body?.history);
     const options = validateOptions(req.body);
@@ -138,7 +110,7 @@ export function createApp({ config, legalService, logger = silentLogger, bodyLim
     return legalService.ask(doc, question, history, options);
   }));
 
-  api.post('/compare', jsonDouble, timed('compare', async (req) => {
+  api.post('/compare', timed('compare', async (req) => {
     const options = validateOptions(req.body);
     const docA = await readDocument(req.body?.documentA, 'first document');
     const docB = await readDocument(req.body?.documentB, 'second document');
@@ -151,7 +123,6 @@ export function createApp({ config, legalService, logger = silentLogger, bodyLim
   // Centralised error handler: never leak stack traces or document content.
   // eslint-disable-next-line no-unused-vars
   app.use((err, req, res, _next) => {
-    res.locals.releaseAiSlot?.(); // e.g. body-parser errors that happen before the handler runs
     if (err instanceof ValidationError) {
       logger.info('Rejected request', { event: 'validation_error', path: req.path });
       return res.status(400).json({ error: err.message });

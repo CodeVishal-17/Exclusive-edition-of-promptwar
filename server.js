@@ -25,7 +25,6 @@ const legalService = client
   ? createLegalService({
       generateJson: createJsonGenerator(client, config, { logger }),
       cache: new LruCache({ maxEntries: config.cacheEntries, ttlMs: config.cacheTtlMs }),
-      askCache: new LruCache({ maxEntries: config.cacheEntries, ttlMs: config.askCacheTtlMs }),
       logger,
     })
   : null;
